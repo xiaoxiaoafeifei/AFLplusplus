@@ -2,6 +2,7 @@
 .test2
 *.o
 *.so
+*.a
 afl-analyze
 afl-as
 afl-clang
@@ -37,3 +38,4 @@ qemu_mode/qemu-*
 unicorn_mode/unicorn
 unicorn_mode/unicorn-*
 unicorn_mode/*.tar.gz
+frida_mode/frida-core.h

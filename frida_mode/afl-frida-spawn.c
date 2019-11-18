@@ -15,23 +15,17 @@
 
  */
 
+#include "../config.h"
 #include "frida-core.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// TO USER: Change this
-#define PAYLOAD_MAX_LEN 4096
-#define TARGET_FUNCTION 0x0000000000401156
-
-#define SHM_ENV_VAR "__AFL_SHM_ID"
-#define FORKSRV_FD 198
-
 static size_t req_id;
 static char   msg_buf[200];
 
-static guint target_pid;
+static pid_t target_pid;
 static int   shm_id;
 
 static int    tgt_argc;
@@ -93,9 +87,8 @@ char *read_file(char *path, size_t *length) {
   len = ftell(fp);
   buf = malloc(len);
   rewind(fp);
-  fread(buf, 1, len, fp);
+  *length = fread(buf, 1, len, fp);
   fclose(fp);
-  *length = len;
 
   return buf;
 
@@ -103,11 +96,11 @@ char *read_file(char *path, size_t *length) {
 
 // from
 // https://stackoverflow.com/questions/6357031/how-do-you-convert-a-byte-array-to-a-hexadecimal-string-in-c
-void tohex(unsigned char *in, size_t insz, char *out) {
+void tohex(char *in, size_t insz, char *out) {
 
-  unsigned char *pin = in;
-  const char *   hex = "0123456789ABCDEF";
-  char *         pout = out;
+  char *pin = in;
+  char *hex = "0123456789ABCDEF";
+  char *pout = out;
   for (; pin < in + insz; pout += 2, pin++) {
 
     pout[0] = hex[(*pin >> 4) & 0xF];
@@ -171,8 +164,8 @@ static void respawn(void) {
 
     sprintf(
         msg_buf,
-        "[\"frida:rpc\", %lu, \"call\", \"setup\", [%d, \"%s\", %llu, %lu]]",
-        ++req_id, shm_id, in_file_hex, TARGET_FUNCTION, PAYLOAD_MAX_LEN);
+        "[\"frida:rpc\", %lu, \"call\", \"setup\", [%d, \"%s\", %lu]]",
+        ++req_id, shm_id, in_file_hex, (size_t)(MAP_SIZE));
 
     frida_script_post_sync(script, msg_buf, NULL, NULL, &error);
     if (error != NULL) clean_exit(1);
@@ -190,23 +183,36 @@ static void respawn(void) {
 
 static void mimic_forkserver() {
 
-  static unsigned char tmp[4];
-  pid_t                child_pid;
-  int                  fake_status = 0;
+  static u8 tmp[4];
+  s32       fake_status = 0;
 
   g_print(" >> Starting fake forkserver\n");
 
   if (write(FORKSRV_FD + 1, tmp, 4) != 4) {
 
     g_printerr(" >> No forkserver, no party\n");
-    return;
+    
+    sprintf(msg_buf, "[\"frida:rpc\", %lu, \"call\", \"execute\", []]",
+            ++req_id);
+
+    frida_script_post_sync(script, msg_buf, NULL, NULL, &error);
+
+    if (error != NULL) {
+
+      fake_status = 134;  // abort
+      g_print("Crash! %s\n", error->message);
+      g_error_free(error);
+      error = NULL;
+
+    }
+    
+    clean_exit(fake_status);
 
   }
 
   while (1) {
 
-    int          status;
-    unsigned int was_killed;
+    u32 was_killed;
     // wait for afl-fuzz
     if (read(FORKSRV_FD, &was_killed, 4) != 4) clean_exit(2);
 
@@ -246,7 +252,7 @@ int main(int argc, char *argv[]) {
   char *id_str = getenv(SHM_ENV_VAR);
   if (!id_str) {
 
-    g_printerr(SHM_ENV_VAR " not defined!\n", argv[0]);
+    g_printerr(SHM_ENV_VAR " not defined!\n");
     return 1;
 
   }

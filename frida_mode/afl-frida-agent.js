@@ -17,7 +17,11 @@
 
 'use strict'
 
-var MAP_SIZE = 65536;
+// TO USER: change this
+var PAYLOAD_MAX_LEN = 4096;
+var TARGET_FUNCTION = "0x0000000000401156";
+
+var MAP_SIZE = 65536; // default value in AFL++
 
 var STALKER_QUEUE_CAP = 100000000;
 var STALKER_QUEUE_DRAIN_INT = 1000*1000;
@@ -27,14 +31,13 @@ var target_function = undefined;
 var func_handle = undefined;
 
 var payload_memory = undefined;
-var payload_max_len = 0;
 var input_filename = undefined;
 
 // Stalker tuning
 Stalker.trustThreshold = 0;
 Stalker.queueCapacity = STALKER_QUEUE_CAP;
 Stalker.queueDrainInterval = STALKER_QUEUE_DRAIN_INT;
-console.log(" >> asdasd-frida-agent loaded!");
+
 /*
 var maps = function() {
 
@@ -49,43 +52,71 @@ var maps = function() {
 }();*/
 
 var shmat_addr = Module.findExportByName(null, "shmat");
-var shmat = new NativeFunction(shmat_addr, 'pointer', ['int', 'pointer', 'int']);
+var shmat = undefined;
+if (shmat_addr === null) {
+  // No shmat, Android?
+  var cm = new CModule(" \n\
+  #include <fcntl.h> \n\
+  #include <linux/shm.h> \n\
+  #include <linux/ashmem.h> \n\
+  #include <sys/ioctl.h> \n\
+  #include <sys/mman.h> \n\
+   \n\
+  void *android_shmat(int __shmid, const void *__shmaddr, int __shmflg) { \n\
+    (void) __shmflg; \n\
+    int   size; \n\
+    void *ptr; \n\
+     \n\
+    size = ioctl(__shmid, ASHMEM_GET_SIZE, NULL); \n\
+    if (size < 0) { return NULL; } \n\
+     \n\
+    ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, __shmid, 0); \n\
+    if (ptr == MAP_FAILED) { return NULL; } \n\
+     \n\
+    return ptr; \n\
+     \n\
+  } \n\
+  ");
+  shmat = cm.android_shmat;
+} else {
+  shmat = new NativeFunction(shmat_addr, 'pointer', ['int', 'pointer', 'int']);
+}
 
-var open_addr = Module.findExportByName(null, "open");
+var open_addr = Module.getExportByName(null, "open");
 var open = new NativeFunction(open_addr, 'int', ['pointer', 'int', 'int']);
 
-var read_addr = Module.findExportByName(null, "read");
+var read_addr = Module.getExportByName(null, "read");
 var read = new NativeFunction(read_addr, 'int', ['int', 'pointer', 'int']);
 
-var close_addr = Module.findExportByName(null, "close");
+var close_addr = Module.getExportByName(null, "close");
 var close = new NativeFunction(close_addr, 'void', ['int']);
 
 
 rpc.exports = {
 
-    setup: function(shm_id, filename_hex, target, max_len) {
-    
-        console.log("Setup")
+    setup: function(shm_id, filename_hex, map_size) {
+         
+        MAP_SIZE = map_size;
         
         afl_area_ptr = shmat(shm_id, ptr(0), 0);
         
-        target_function = ptr(target);
+        target_function = ptr(TARGET_FUNCTION);
 
-        input_filename = Memory.alloc(filename_hex.length / 2);
+        input_filename = Memory.alloc(filename_hex.length / 2 +1);
         
         var filename = [];
         for(var i = 0; i < filename_hex.length; i+=2)
             filename.push(parseInt(filename_hex.substring(i, i + 2), 16));
-
-        filename = new Uint8Array(filename)
-        Memory.writeByteArray(input_filename, filename)
         
-        payload_max_len = max_len;
-        payload_memory = Memory.alloc(max_len);
+        filename = new Uint8Array(filename) 
+        Memory.writeByteArray(input_filename, filename);
+        input_filename.add(filename_hex.length / 2).writeU8(0);
+
+        payload_memory = Memory.alloc(PAYLOAD_MAX_LEN);
         
         // TO USER: Customize parameters for your use case
         func_handle = new NativeFunction(target_function, 'void', ['pointer', 'int']);
-
+        
         var prev_loc_ptr = Memory.alloc(32);
         var prev_loc = 0;
         
@@ -180,13 +211,15 @@ rpc.exports = {
     execute: function () {
         if(target_function == undefined)
             return false;
-
+        
+        //console.log(input_filename.readCString())
         var fd = open(input_filename, 0, 0);
-        var len = read(fd, payload_memory, payload_max_len);
+        var len = read(fd, payload_memory, PAYLOAD_MAX_LEN);
         close(fd);
         
         if (len < 0) return false;
         
+        // TO USER: Adapt this harness call
         var retval = func_handle(payload_memory, len);
     },
 };
