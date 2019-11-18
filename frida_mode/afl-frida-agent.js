@@ -19,7 +19,8 @@
 
 // TO USER: change this
 var PAYLOAD_MAX_LEN = 4096;
-var TARGET_FUNCTION = "0x0000000000401156";
+var TARGET_MODULE = "test";
+var TARGET_FUNCTION = ptr("0x0000068a"); // target_func from nm
 
 var MAP_SIZE = 65536; // default value in AFL++
 
@@ -38,7 +39,7 @@ Stalker.trustThreshold = 0;
 Stalker.queueCapacity = STALKER_QUEUE_CAP;
 Stalker.queueDrainInterval = STALKER_QUEUE_DRAIN_INT;
 
-/*
+
 var maps = function() {
 
     var maps = Process.enumerateModulesSync();
@@ -49,7 +50,7 @@ var maps = function() {
 
     return maps;
 
-}();*/
+}();
 
 var shmat_addr = Module.findExportByName(null, "shmat");
 var shmat = undefined;
@@ -100,8 +101,9 @@ rpc.exports = {
         
         afl_area_ptr = shmat(shm_id, ptr(0), 0);
         
-        target_function = ptr(TARGET_FUNCTION);
-
+        target_function = Module.findBaseAddress(TARGET_MODULE);
+        target_function = target_function.add(TARGET_FUNCTION);
+        console.log(target_function)
         input_filename = Memory.alloc(filename_hex.length / 2 +1);
         
         var filename = [];
@@ -212,7 +214,7 @@ rpc.exports = {
         if(target_function == undefined)
             return false;
         
-        //console.log(input_filename.readCString())
+        console.log(input_filename.readCString())
         var fd = open(input_filename, 0, 0);
         var len = read(fd, payload_memory, PAYLOAD_MAX_LEN);
         close(fd);
