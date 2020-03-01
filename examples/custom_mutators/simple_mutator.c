@@ -47,3 +47,11 @@ size_t afl_custom_mutator(uint8_t *data, size_t size, uint8_t *mutated_out,
 
 }
 
+size_t pre_save_handler(uint8_t *data, size_t size, uint8_t **new_data) {
+  
+  // A No-Op pre save handler
+  
+  *new_data = data;
+  return size;
+
+}

@@ -26,6 +26,18 @@ def init(seed):
     random.seed(seed)
     return 0
 
+def queue_get(filename):
+    '''
+    Called per fuzzing iteration.
+    
+    @type buf: str
+    @param buf: The filename of the queue entry.
+    
+    @rtype: bool
+    @return: If the fuzzer should fuzz this queue entry or not
+    '''
+    return True
+
 def fuzz(buf, add_buf):
     '''
     Called per fuzzing iteration.
@@ -101,3 +113,17 @@ def fuzz(buf, add_buf):
 #         # removed in the last step
 #     
 #     return next_index
+#
+# def pre_save(buf):
+#     '''
+#     Called just before the execution to export the data in the format
+#     expected by the target
+#     
+#     @type buf: bytearray
+#     @param buf: The buffer.
+#     
+#     @rtype: bytearray
+#     @return: The exported buffer
+#     '''
+#      return buf
+#
