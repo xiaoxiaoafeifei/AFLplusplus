@@ -350,8 +350,6 @@ void afl_forkserver(CPUState *cpu) {
 
       child_pid = fork();
       
-      fprintf(stderr, "FORKED\n");
-      
       if (child_pid < 0) exit(4);
 
       if (!child_pid) {

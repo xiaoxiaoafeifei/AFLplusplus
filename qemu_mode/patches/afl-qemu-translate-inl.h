@@ -36,7 +36,6 @@
 
 void HELPER(afl_maybe_log)(target_ulong afl_loc) {
 
-  fprintf(stderr, "hitted %ld\n", afl_loc);
   INC_AFL_AREA(afl_loc);
 
 }
