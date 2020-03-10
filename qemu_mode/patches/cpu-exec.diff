@@ -1,5 +1,5 @@
 diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
-index 870027d4..c855519c 100644
+index 870027d4..7928787c 100644
 --- a/accel/tcg/cpu-exec.c
 +++ b/accel/tcg/cpu-exec.c
 @@ -36,6 +36,8 @@
@@ -25,17 +25,24 @@ index 870027d4..c855519c 100644
          mmap_unlock();
          /* We add the TB in the virtual pc hash table for the fast lookup */
          atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
-@@ -417,7 +421,23 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
+@@ -416,8 +420,30 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
+     }
  #endif
      /* See if we can patch the calling TB. */
++    unsigned long afl_id = 0;
      if (last_tb) {
 -        tb_add_jump(last_tb, tb_exit, tb);
 +
 +        if ((afl_start_code < tb->pc && afl_end_code > tb->pc) ||
 +            (afl_start_code < last_tb->pc && afl_end_code > last_tb->pc)) {
 +            mmap_lock();
-+            TranslationBlock *edge = afl_gen_edge(cpu, global_afl_id++);
++            afl_id = global_afl_id++;
++            TranslationBlock *edge = afl_gen_edge(cpu, afl_id);
 +            mmap_unlock();
++
++            target_ulong afl_loc = afl_id & (MAP_SIZE -1);
++            fprintf(stderr, "hitted %ld\n", afl_loc);
++            INC_AFL_AREA(afl_loc);
 +
 +            tb_add_jump(last_tb, tb_exit, edge);
 +            tb_add_jump(edge, 0, tb);
@@ -46,7 +53,7 @@ index 870027d4..c855519c 100644
 +        was_chained = true;
 +    }
 +    if (was_translated || was_chained) {
-+        afl_request_tsl(pc, cs_base, flags, cf_mask, was_chained ? last_tb : NULL, tb_exit);
++        afl_request_tsl(pc, cs_base, flags, cf_mask, was_chained ? last_tb : NULL, tb_exit, afl_id);
      }
      return tb;
  }
