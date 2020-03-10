@@ -571,12 +571,12 @@ static void afl_wait_tsl(CPUState *cpu, int fd) {
                                    c.last_tb.flags, c.cf_mask);
         if (last_tb) {
         
-          if ((afl_start_code < tb->pc && afl_end_code > tb->pc) ||
-              (afl_start_code < last_tb->pc && afl_end_code > last_tb->pc)) {
+          if (c.afl_id && ((afl_start_code < tb->pc && afl_end_code > tb->pc) ||
+              (afl_start_code < last_tb->pc && afl_end_code > last_tb->pc))) {
 
             mmap_lock();
             global_afl_id = c.afl_id;
-            TranslationBlock *edge = afl_gen_edge(cpu, global_afl_id++);
+            TranslationBlock *edge = afl_gen_edge(cpu, global_afl_id);
             mmap_unlock();
 
             tb_add_jump(last_tb, c.tb_exit, edge);
