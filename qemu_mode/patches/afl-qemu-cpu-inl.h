@@ -85,6 +85,8 @@ int           persisent_retaddr_offset;
 
 afl_persistent_hook_fn afl_persistent_hook_ptr;
 
+unsigned long global_afl_id;
+
 /* Instrumentation ratio: */
 
 unsigned int afl_inst_rms = MAP_SIZE;         /* Exported for afl_gen_trace */
@@ -562,7 +564,22 @@ static void afl_wait_tsl(CPUState *cpu, int fd) {
 
         last_tb = tb_htable_lookup(cpu, c.last_tb.pc, c.last_tb.cs_base,
                                    c.last_tb.flags, c.cf_mask);
-        if (last_tb) { tb_add_jump(last_tb, c.tb_exit, tb); }
+        if (last_tb) {
+        
+          if ((afl_start_code < tb->pc && afl_end_code > tb->pc) ||
+              (afl_start_code < last_tb->pc && afl_end_code > last_tb->pc)) {
+
+            mmap_lock();
+            TranslationBlock *edge = afl_gen_edge(cpu, global_afl_id++);
+            mmap_unlock();
+
+            tb_add_jump(last_tb, c.tb_exit, edge);
+            tb_add_jump(edge, 0, tb);
+
+          } else
+            tb_add_jump(last_tb, c.tb_exit, tb);
+
+        }
 
       }
 

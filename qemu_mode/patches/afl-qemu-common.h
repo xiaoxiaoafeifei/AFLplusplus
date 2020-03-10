@@ -81,6 +81,8 @@ extern unsigned char  persistent_save_gpr;
 extern uint64_t       persistent_saved_gpr[AFL_REGS_NUM];
 extern int            persisent_retaddr_offset;
 
+extern unsigned long global_afl_id;
+
 extern afl_persistent_hook_fn afl_persistent_hook_ptr;
 
 extern __thread abi_ulong afl_prev_loc;
@@ -103,6 +105,8 @@ void afl_float_compcov_log_64(target_ulong cur_loc, float64 arg1, float64 arg2,
                               void *status);
 void afl_float_compcov_log_80(target_ulong cur_loc, floatx80 arg1,
                               floatx80 arg2);
+
+TranslationBlock *afl_gen_edge(CPUState *cpu, unsigned long afl_id);
 
 /* Check if an address is valid in the current mapping */
 
