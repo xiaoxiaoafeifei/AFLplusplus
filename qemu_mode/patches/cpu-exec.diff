@@ -25,7 +25,7 @@ index 870027d4..a164388a 100644
          mmap_unlock();
          /* We add the TB in the virtual pc hash table for the fast lookup */
          atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
-@@ -416,8 +420,31 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
+@@ -416,8 +420,30 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
      }
  #endif
      /* See if we can patch the calling TB. */
@@ -42,7 +42,6 @@ index 870027d4..a164388a 100644
 +            mmap_unlock();
 +
 +            target_ulong afl_loc = afl_id & (MAP_SIZE -1);
-+            fprintf(stderr, "hitted %ld\n", afl_loc);
 +            INC_AFL_AREA(afl_loc);
 +
 +            tb_add_jump(last_tb, tb_exit, edge);
