@@ -34,15 +34,10 @@
 #include "afl-qemu-common.h"
 #include "tcg-op.h"
 
-void HELPER(afl_maybe_log)(target_ulong cur_loc) {
+void HELPER(afl_maybe_log)(target_ulong afl_loc) {
 
-  fprintf(stderr, "hitted %ld\n", cur_loc);
-
-  register uintptr_t afl_idx = cur_loc ^ afl_prev_loc;
-
-  INC_AFL_AREA(afl_idx);
-
-  afl_prev_loc = cur_loc >> 1;
+  fprintf(stderr, "hitted %ld\n", afl_loc);
+  INC_AFL_AREA(afl_loc);
 
 }
 
@@ -80,9 +75,8 @@ TranslationBlock *afl_gen_edge(CPUState *cpu, unsigned long afl_id)
 
     tcg_ctx->cpu = ENV_GET_CPU(env);
     
-    fprintf(stderr, "generating %ld\n", afl_id);
-    
-    TCGv tmp0 = tcg_const_tl(afl_id);
+    target_ulong afl_loc = afl_id & (MAP_SIZE -1);
+    TCGv tmp0 = tcg_const_tl(afl_loc);
     gen_helper_afl_maybe_log(tmp0);
     tcg_temp_free(tmp0);
     tcg_gen_goto_tb(0);

@@ -95,7 +95,7 @@ unsigned int afl_inst_rms = MAP_SIZE;         /* Exported for afl_gen_trace */
 
 static void afl_wait_tsl(CPUState *, int);
 static void afl_request_tsl(target_ulong, target_ulong, uint32_t, uint32_t,
-                            TranslationBlock *, int);
+                            TranslationBlock *, int, unsigned long);
 
 /* Data structures passed around by the translate handlers: */
 
@@ -120,6 +120,7 @@ struct afl_chain {
   struct afl_tb last_tb;
   uint32_t      cf_mask;
   int           tb_exit;
+  unsigned long afl_id;
 
 };
 
@@ -348,6 +349,9 @@ void afl_forkserver(CPUState *cpu) {
       close(t_fd[1]);
 
       child_pid = fork();
+      
+      fprintf(stderr, "FORKED\n");
+      
       if (child_pid < 0) exit(4);
 
       if (!child_pid) {
@@ -478,7 +482,7 @@ void afl_persistent_loop(void) {
 
 static void afl_request_tsl(target_ulong pc, target_ulong cb, uint32_t flags,
                             uint32_t cf_mask, TranslationBlock *last_tb,
-                            int tb_exit) {
+                            int tb_exit, unsigned long afl_id) {
 
   if (disable_caching) return;
 
@@ -503,6 +507,7 @@ static void afl_request_tsl(target_ulong pc, target_ulong cb, uint32_t flags,
     c.last_tb.flags = last_tb->flags;
     c.cf_mask = cf_mask;
     c.tb_exit = tb_exit;
+    c.afl_id = afl_id;
 
     if (write(TSL_FD, &c, sizeof(struct afl_chain)) != sizeof(struct afl_chain))
       return;
@@ -570,6 +575,7 @@ static void afl_wait_tsl(CPUState *cpu, int fd) {
               (afl_start_code < last_tb->pc && afl_end_code > last_tb->pc)) {
 
             mmap_lock();
+            global_afl_id = c.afl_id;
             TranslationBlock *edge = afl_gen_edge(cpu, global_afl_id++);
             mmap_unlock();
 
