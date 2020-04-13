@@ -134,8 +134,15 @@ void bind_to_free_cpu(afl_state_t *afl) {
   for (i = 0; i < proccount; i++) {
 
 #if defined(__FreeBSD__)
-    if (procs[i].ki_oncpu < sizeof(cpu_used) && procs[i].ki_pctcpu > 60)
-      cpu_used[procs[i].ki_oncpu] = 1;
+    if (!strcmp(procs[i].ki_comm, "idle")) continue;
+
+    // fix when ki_oncpu = -1
+    int oncpu;
+    oncpu = procs[i].ki_oncpu;
+    if (oncpu == -1) oncpu = procs[i].ki_lastcpu;
+
+    if (oncpu != -1 && oncpu < sizeof(cpu_used) && procs[i].ki_pctcpu > 60)
+      cpu_used[oncpu] = 1;
 #elif defined(__DragonFly__)
     if (procs[i].kp_lwp.kl_cpuid < sizeof(cpu_used) &&
         procs[i].kp_lwp.kl_pctcpu > 10)
@@ -441,10 +448,12 @@ static void check_map_coverage(afl_state_t *afl) {
 
   u32 i;
 
-  if (count_bytes(afl->fsrv.trace_bits) < 100) return;
+  if (count_bytes(afl, afl->fsrv.trace_bits) < 100) return;
 
   for (i = (1 << (MAP_SIZE_POW2 - 1)); i < MAP_SIZE; ++i)
     if (afl->fsrv.trace_bits[i]) return;
+
+  if (afl->fsrv.map_size != MAP_SIZE) return;
 
   WARNF("Recompile binary with newer version of afl to improve coverage!");
 
@@ -1844,8 +1853,6 @@ static void handle_stop_sig(int sig) {
 
     if (el->fsrv.child_pid > 0) kill(el->fsrv.child_pid, SIGKILL);
     if (el->fsrv.fsrv_pid > 0) kill(el->fsrv.fsrv_pid, SIGKILL);
-    if (el->cmplog_child_pid > 0) kill(el->cmplog_child_pid, SIGKILL);
-    if (el->cmplog_fsrv_pid > 0) kill(el->cmplog_fsrv_pid, SIGKILL);
 
   });
 
@@ -1979,7 +1986,7 @@ void check_binary(afl_state_t *afl, u8 *fname) {
 
 #endif                                                       /* ^!__APPLE__ */
 
-  if (!afl->qemu_mode && !afl->unicorn_mode && !afl->dumb_mode &&
+  if (!afl->fsrv.qemu_mode && !afl->unicorn_mode && !afl->dumb_mode &&
       !memmem(f_data, f_len, SHM_ENV_VAR, strlen(SHM_ENV_VAR) + 1)) {
 
     SAYF("\n" cLRD "[-] " cRST
@@ -2006,7 +2013,7 @@ void check_binary(afl_state_t *afl, u8 *fname) {
 
   }
 
-  if ((afl->qemu_mode) &&
+  if ((afl->fsrv.qemu_mode) &&
       memmem(f_data, f_len, SHM_ENV_VAR, strlen(SHM_ENV_VAR) + 1)) {
 
     SAYF("\n" cLRD "[-] " cRST

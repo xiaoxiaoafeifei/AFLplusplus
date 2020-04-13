@@ -51,6 +51,8 @@ typedef struct afl_forkserver {
       fsrv_st_fd;                       /* Fork server status pipe (read)   */
 
   u32 exec_tmout;                       /* Configurable exec timeout (ms)   */
+  u32 map_size;                         /* map size used by the target      */
+  u32 snapshot;                         /* is snapshot feature used         */
   u64 mem_limit;                        /* Memory cap for child (MB)        */
 
   u8 *out_file,                         /* File to fuzz, if any             */
@@ -64,12 +66,25 @@ typedef struct afl_forkserver {
 
   u32 prev_timed_out;                   /* if prev forkserver run timed out */
 
+  u8 qemu_mode;                         /* if running in qemu mode or not   */
+
+  char *cmplog_binary;                  /* the name of the cmplog binary    */
+
+  /* Function to kick off the forkserver child */
+  void (*init_child_func)(struct afl_forkserver *fsrv, char **argv);
+
+  u8 *function_opt;                     /* for autodictionary: afl ptr      */
+
+  void (*function_ptr)(void *afl_tmp, u8 *mem, u32 len);
+
 } afl_forkserver_t;
 
 void afl_fsrv_init(afl_forkserver_t *fsrv);
-void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv);
+void afl_fsrv_init_dup(afl_forkserver_t *fsrv_to, afl_forkserver_t *from);
+void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
+                    volatile u8 *stop_soon_p, u8 debug_child_output);
+void afl_fsrv_killall(void);
 void afl_fsrv_deinit(afl_forkserver_t *fsrv);
-void afl_fsrv_killall();
 
 #ifdef __APPLE__
 #define MSG_FORK_ON_APPLE                                                    \

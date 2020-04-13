@@ -99,6 +99,10 @@ void afl_state_init(afl_state_t *afl) {
 
   afl->fsrv.use_stdin = 1;
 
+  afl->fsrv.map_size = MAP_SIZE;
+  afl->fsrv.function_opt = (u8 *)afl;
+  afl->fsrv.function_ptr = &maybe_add_auto;
+
   afl->cal_cycles = CAL_CYCLES;
   afl->cal_cycles_long = CAL_CYCLES_LONG;
 
@@ -280,6 +284,13 @@ void read_afl_environment(afl_state_t *afl, char **envp) {
             afl->afl_env.afl_autoresume =
                 get_afl_env(afl_environment_variables[i]) ? 1 : 0;
 
+          } else if (!strncmp(env, "AFL_CAL_FAST",
+
+                              afl_environment_variable_len)) {
+
+            afl->afl_env.afl_cal_fast =
+                get_afl_env(afl_environment_variables[i]) ? 1 : 0;
+
           } else if (!strncmp(env, "AFL_TMPDIR",
 
                               afl_environment_variable_len)) {
@@ -348,6 +359,8 @@ void read_afl_environment(afl_state_t *afl, char **envp) {
 void afl_state_deinit(afl_state_t *afl) {
 
   if (afl->post_deinit) afl->post_deinit(afl->post_data);
+  if (afl->in_place_resume) ck_free(afl->in_dir);
+  if (afl->sync_id) ck_free(afl->out_dir);
 
   free(afl->out_buf);
   free(afl->out_scratch_buf);

@@ -185,7 +185,7 @@ static void edit_params(u32 argc, char **argv, char **envp) {
       snprintf(llvm_fullpath, sizeof(llvm_fullpath), "%s/clang++", LLVM_BINDIR);
     else
       sprintf(llvm_fullpath, "clang++");
-    cc_params[0] = alt_cxx ? alt_cxx : (u8 *)llvm_fullpath;
+    cc_params[0] = alt_cxx && *alt_cxx ? alt_cxx : (u8 *)llvm_fullpath;
 
   } else {
 
@@ -194,7 +194,7 @@ static void edit_params(u32 argc, char **argv, char **envp) {
       snprintf(llvm_fullpath, sizeof(llvm_fullpath), "%s/clang", LLVM_BINDIR);
     else
       sprintf(llvm_fullpath, "clang");
-    cc_params[0] = alt_cc ? alt_cc : (u8 *)llvm_fullpath;
+    cc_params[0] = alt_cc && *alt_cc ? alt_cc : (u8 *)llvm_fullpath;
 
   }
 
@@ -269,12 +269,6 @@ static void edit_params(u32 argc, char **argv, char **envp) {
 
   if (instrument_mode == INSTRUMENT_LTO) {
 
-    char *old_path = getenv("PATH");
-    char *new_path = alloc_printf("%s:%s", AFL_PATH, old_path);
-
-    setenv("PATH", new_path, 1);
-    setenv("AFL_LD", "1", 1);
-
     if (getenv("AFL_LLVM_WHITELIST") != NULL) {
 
       cc_params[cc_par_cnt++] = "-Xclang";
@@ -285,13 +279,10 @@ static void edit_params(u32 argc, char **argv, char **envp) {
 
     }
 
-#ifdef AFL_CLANG_FUSELD
-    cc_params[cc_par_cnt++] = alloc_printf("-fuse-ld=%s/afl-ld", AFL_PATH);
-#endif
-
-    cc_params[cc_par_cnt++] = "-B";
-    cc_params[cc_par_cnt++] = AFL_PATH;
-
+    cc_params[cc_par_cnt++] = alloc_printf("-fuse-ld=%s", AFL_REAL_LD);
+    cc_params[cc_par_cnt++] = "-Wl,--allow-multiple-definition";
+    cc_params[cc_par_cnt++] = alloc_printf(
+        "-Wl,-mllvm=-load=%s/afl-llvm-lto-instrumentation.so", obj_path);
     cc_params[cc_par_cnt++] = lto_flag;
 
   } else {
@@ -410,7 +401,11 @@ static void edit_params(u32 argc, char **argv, char **envp) {
 
   }
 
-  if (getenv("AFL_NO_BUILTIN")) {
+  if (getenv("AFL_NO_BUILTIN") || getenv("AFL_LLVM_LAF_TRANSFORM_COMPARES") ||
+      getenv("LAF_TRANSFORM_COMPARES") ||
+      (instrument_mode == INSTRUMENT_LTO &&
+       (getenv("AFL_LLVM_LTO_AUTODICTIONARY") ||
+        getenv("AFL_LLVM_AUTODICTIONARY")))) {
 
     cc_params[cc_par_cnt++] = "-fno-builtin-strcmp";
     cc_params[cc_par_cnt++] = "-fno-builtin-strncmp";
@@ -491,21 +486,38 @@ static void edit_params(u32 argc, char **argv, char **envp) {
 
     case 0:
       cc_params[cc_par_cnt++] = alloc_printf("%s/afl-llvm-rt.o", obj_path);
+      if (instrument_mode == INSTRUMENT_LTO)
+        cc_params[cc_par_cnt++] =
+            alloc_printf("%s/afl-llvm-rt-lto.o", obj_path);
       break;
 
     case 32:
       cc_params[cc_par_cnt++] = alloc_printf("%s/afl-llvm-rt-32.o", obj_path);
-
       if (access(cc_params[cc_par_cnt - 1], R_OK))
         FATAL("-m32 is not supported by your compiler");
+      if (instrument_mode == INSTRUMENT_LTO) {
+
+        cc_params[cc_par_cnt++] =
+            alloc_printf("%s/afl-llvm-rt-lto-32.o", obj_path);
+        if (access(cc_params[cc_par_cnt - 1], R_OK))
+          FATAL("-m32 is not supported by your compiler");
+
+      }
 
       break;
 
     case 64:
       cc_params[cc_par_cnt++] = alloc_printf("%s/afl-llvm-rt-64.o", obj_path);
-
       if (access(cc_params[cc_par_cnt - 1], R_OK))
         FATAL("-m64 is not supported by your compiler");
+      if (instrument_mode == INSTRUMENT_LTO) {
+
+        cc_params[cc_par_cnt++] =
+            alloc_printf("%s/afl-llvm-rt-lto-64.o", obj_path);
+        if (access(cc_params[cc_par_cnt - 1], R_OK))
+          FATAL("-m64 is not supported by your compiler");
+
+      }
 
       break;
 
@@ -738,9 +750,7 @@ int main(int argc, char **argv, char **envp) {
         "bb\n"
         "AFL_LLVM_LTO_DONTWRITEID: don't write the highest ID used to a "
         "global var\n"
-        "AFL_REAL_LD: use this linker instead of the compiled in path\n"
-        "AFL_LD_PASSTHROUGH: do not perform instrumentation (for configure "
-        "scripts)\n"
+        "AFL_REAL_LD: use this lld linker instead of the compiled in path\n"
         "\nafl-clang-lto was built with linker target \"%s\" and LTO flags "
         "\"%s\"\n"
         "If anything fails - be sure to read README.lto.md!\n",

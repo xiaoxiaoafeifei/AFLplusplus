@@ -24,6 +24,7 @@
  */
 
 #include "afl-fuzz.h"
+#include "cmplog.h"
 
 static u8 *get_libradamsa_path(u8 *own_loc) {
 
@@ -128,12 +129,11 @@ static void usage(afl_state_t *afl, u8 *argv0, int more_help) {
 
       "Testing settings:\n"
       "  -s seed       - use a fixed seed for the RNG\n"
-      "  -V seconds    - fuzz for a maximum total time of seconds then "
+      "  -V seconds    - fuzz for a specific time then terminate\n"
+      "  -E execs      - fuzz for a approx. no of total executions then "
       "terminate\n"
-      "  -E execs      - fuzz for a maximum number of total executions then "
-      "terminate\n"
-      "  Note: -V/-E are not precise, they are checked after a queue entry "
-      "is done\n  which can be many minutes/execs later\n\n"
+      "                  Note: not precise and can have several more "
+      "executions.\n\n"
 
       "Other stuff:\n"
       "  -T text       - text banner to show on the screen\n"
@@ -143,7 +143,7 @@ static void usage(afl_state_t *afl, u8 *argv0, int more_help) {
       "  -B bitmap.txt - mutate a specific test case, use the out/fuzz_bitmap "
       "file\n"
       "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
-      "  -e ext        - File extension for the temporarily generated test "
+      "  -e ext        - file extension for the temporarily generated test "
       "case\n\n",
       argv0, EXEC_TIMEOUT, MEM_LIMIT);
 
@@ -213,6 +213,8 @@ static void usage(afl_state_t *afl, u8 *argv0, int more_help) {
 
 static int stricmp(char const *a, char const *b) {
 
+  if (!a || !b) FATAL("Null reference");
+
   for (;; ++a, ++b) {
 
     int d;
@@ -245,6 +247,7 @@ int main(int argc, char **argv_orig, char **envp) {
   afl_state_init(afl);
   afl_fsrv_init(&afl->fsrv);
 
+  if (get_afl_env("AFL_DEBUG")) afl->debug = 1;
   read_afl_environment(afl, envp);
   exit_1 = !!afl->afl_env.afl_bench_just_one;
 
@@ -498,8 +501,8 @@ int main(int argc, char **argv_orig, char **envp) {
 
       case 'Q':                                                /* QEMU mode */
 
-        if (afl->qemu_mode) FATAL("Multiple -Q options not supported");
-        afl->qemu_mode = 1;
+        if (afl->fsrv.qemu_mode) FATAL("Multiple -Q options not supported");
+        afl->fsrv.qemu_mode = 1;
 
         if (!mem_limit_given) afl->fsrv.mem_limit = MEM_LIMIT_QEMU;
 
@@ -524,7 +527,7 @@ int main(int argc, char **argv_orig, char **envp) {
       case 'W':                                           /* Wine+QEMU mode */
 
         if (afl->use_wine) FATAL("Multiple -W options not supported");
-        afl->qemu_mode = 1;
+        afl->fsrv.qemu_mode = 1;
         afl->use_wine = 1;
 
         if (!mem_limit_given) afl->fsrv.mem_limit = 0;
@@ -687,7 +690,7 @@ int main(int argc, char **argv_orig, char **envp) {
   OKF("MOpt Mutator from github.com/puppet-meteor/MOpt-AFL");
 
   if (afl->sync_id && afl->force_deterministic &&
-      getenv("AFL_CUSTOM_MUTATOR_ONLY"))
+      afl->afl_env.afl_custom_mutator_only)
     WARNF(
         "Using -M master with the AFL_CUSTOM_MUTATOR_ONLY mutator options will "
         "result in no deterministic mutations being done!");
@@ -748,7 +751,7 @@ int main(int argc, char **argv_orig, char **envp) {
   if (afl->dumb_mode) {
 
     if (afl->crash_mode) FATAL("-C and -n are mutually exclusive");
-    if (afl->qemu_mode) FATAL("-Q and -n are mutually exclusive");
+    if (afl->fsrv.qemu_mode) FATAL("-Q and -n are mutually exclusive");
     if (afl->unicorn_mode) FATAL("-U and -n are mutually exclusive");
 
   }
@@ -816,7 +819,7 @@ int main(int argc, char **argv_orig, char **envp) {
 
   if (afl->afl_env.afl_preload) {
 
-    if (afl->qemu_mode) {
+    if (afl->fsrv.qemu_mode) {
 
       u8 *qemu_preload = getenv("QEMU_SET_ENV");
       u8 *afl_preload = getenv("AFL_PRELOAD");
@@ -862,15 +865,13 @@ int main(int argc, char **argv_orig, char **envp) {
   check_if_tty(afl);
   if (afl->afl_env.afl_force_ui) afl->not_on_tty = 0;
 
-  if (get_afl_env("AFL_CAL_FAST")) {
+  if (afl->afl_env.afl_cal_fast) {
 
     /* Use less calibration cycles, for slow applications */
     afl->cal_cycles = 3;
     afl->cal_cycles_long = 5;
 
   }
-
-  if (get_afl_env("AFL_DEBUG")) afl->debug = 1;
 
   if (afl->afl_env.afl_custom_mutator_only) {
 
@@ -919,21 +920,21 @@ int main(int argc, char **argv_orig, char **envp) {
   if ((afl->tmp_dir = afl->afl_env.afl_tmpdir) != NULL &&
       !afl->in_place_resume) {
 
-    char tmpfile[afl->file_extension ? strlen(afl->tmp_dir) + 1 + 10 + 1 +
-                                           strlen(afl->file_extension) + 1
-                                     : strlen(afl->tmp_dir) + 1 + 10 + 1];
+    char tmpfile[PATH_MAX];
+
     if (afl->file_extension) {
 
-      sprintf(tmpfile, "%s/.cur_input.%s", afl->tmp_dir, afl->file_extension);
+      snprintf(tmpfile, PATH_MAX, "%s/.cur_input.%s", afl->tmp_dir,
+               afl->file_extension);
 
     } else {
 
-      sprintf(tmpfile, "%s/.cur_input", afl->tmp_dir);
+      snprintf(tmpfile, PATH_MAX, "%s/.cur_input", afl->tmp_dir);
 
     }
 
-    if (access(tmpfile, F_OK) !=
-        -1)  // there is still a race condition here, but well ...
+    /* there is still a race condition here, but well ... */
+    if (access(tmpfile, F_OK) != -1)
       FATAL(
           "AFL_TMPDIR already has an existing temporary input file: %s - if "
           "this is not from another instance, then just remove the file.",
@@ -991,7 +992,7 @@ int main(int argc, char **argv_orig, char **envp) {
 
     if (afl->unicorn_mode)
       FATAL("CmpLog and Unicorn mode are not compatible at the moment, sorry");
-    if (!afl->qemu_mode) check_binary(afl, afl->cmplog_binary);
+    if (!afl->fsrv.qemu_mode) check_binary(afl, afl->cmplog_binary);
 
   }
 
@@ -999,7 +1000,7 @@ int main(int argc, char **argv_orig, char **envp) {
 
   afl->start_time = get_cur_time();
 
-  if (afl->qemu_mode) {
+  if (afl->fsrv.qemu_mode) {
 
     if (afl->use_wine)
       use_argv = get_wine_argv(argv[0], &afl->fsrv.target_path, argc - optind,
@@ -1015,6 +1016,21 @@ int main(int argc, char **argv_orig, char **envp) {
   }
 
   afl->argv = use_argv;
+
+  if (afl->cmplog_binary) {
+
+    ACTF("Spawning cmplog forkserver");
+    afl_fsrv_init_dup(&afl->cmplog_fsrv, &afl->fsrv);
+    // TODO: this is semi-nice
+    afl->cmplog_fsrv.trace_bits = afl->fsrv.trace_bits;
+    afl->cmplog_fsrv.qemu_mode = afl->fsrv.qemu_mode;
+    afl->cmplog_fsrv.cmplog_binary = afl->cmplog_binary;
+    afl->cmplog_fsrv.init_child_func = cmplog_exec_child;
+    afl_fsrv_start(&afl->cmplog_fsrv, afl->argv, &afl->stop_soon,
+                   afl->afl_env.afl_debug_child_output);
+
+  }
+
   perform_dry_run(afl);
 
   cull_queue(afl);
@@ -1109,55 +1125,6 @@ int main(int argc, char **argv_orig, char **envp) {
     afl->queue_cur = afl->queue_cur->next;
     ++afl->current_entry;
 
-    if (afl->most_time_key == 1) {
-
-      u64 cur_ms_lv = get_cur_time();
-      if (afl->most_time * 1000 < cur_ms_lv - afl->start_time) {
-
-        afl->most_time_key = 2;
-        afl->stop_soon = 2;
-        break;
-
-      }
-
-    }
-
-    if (afl->most_execs_key == 1) {
-
-      if (afl->most_execs <= afl->total_execs) {
-
-        afl->most_execs_key = 2;
-        afl->stop_soon = 2;
-        break;
-
-      }
-
-    }
-
-  }
-
-  // if (afl->queue_cur) show_stats(afl);
-
-  /*
-   * ATTENTION - the following 10 lines were copied from a PR to Google's afl
-   * repository - and slightly fixed.
-   * These lines have nothing to do with the purpose of original PR though.
-   * Looks like when an exit condition was completed (AFL_BENCH_JUST_ONE,
-   * AFL_EXIT_WHEN_DONE or AFL_BENCH_UNTIL_CRASH) the child and forkserver
-   * where not killed?
-   */
-  /* if we stopped programmatically, we kill the forkserver and the current
-     runner. if we stopped manually, this is done by the signal handler */
-  if (afl->stop_soon == 2) {
-
-    if (afl->fsrv.child_pid > 0) kill(afl->fsrv.child_pid, SIGKILL);
-    if (afl->fsrv.fsrv_pid > 0) kill(afl->fsrv.fsrv_pid, SIGKILL);
-    if (afl->cmplog_child_pid > 0) kill(afl->cmplog_child_pid, SIGKILL);
-    if (afl->cmplog_fsrv_pid > 0) kill(afl->cmplog_fsrv_pid, SIGKILL);
-    /* Now that we've killed the forkserver, we wait for it to be able to get
-     * rusage stats. */
-    if (waitpid(afl->fsrv.fsrv_pid, NULL, 0) <= 0) { WARNF("error waitpid\n"); }
-
   }
 
   write_bitmap(afl);
@@ -1200,6 +1167,7 @@ stop_fuzzing:
   ck_free(afl->fsrv.target_path);
   ck_free(afl->fsrv.out_file);
   ck_free(afl->sync_id);
+  afl_state_deinit(afl);
   free(afl);                                                 /* not tracked */
 
   argv_cpy_free(argv);

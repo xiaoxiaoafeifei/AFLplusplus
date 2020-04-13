@@ -199,6 +199,7 @@ performance-test:	source-only
 	@cd test ; ./test-performance.sh
 
 
+# hint: make targets are also listed in the top level README.md
 help:
 	@echo "HELP --- the following make targets exist:"
 	@echo "=========================================="
@@ -359,6 +360,7 @@ code-format:
 	./.custom-format.py -i gcc_plugin/*.cc
 	./.custom-format.py -i examples/*/*.c
 	./.custom-format.py -i examples/*/*.h
+	./.custom-format.py -i test/*.c
 	./.custom-format.py -i qemu_mode/patches/*.h
 	./.custom-format.py -i qemu_mode/libcompcov/*.c
 	./.custom-format.py -i qemu_mode/libcompcov/*.cc

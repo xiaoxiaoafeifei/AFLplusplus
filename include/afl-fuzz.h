@@ -331,7 +331,8 @@ typedef struct afl_env_vars {
   u8 afl_skip_cpufreq, afl_exit_when_done, afl_no_affinity, afl_skip_bin_check,
       afl_dumb_forksrv, afl_import_first, afl_custom_mutator_only, afl_no_ui,
       afl_force_ui, afl_i_dont_care_about_missing_crashes, afl_bench_just_one,
-      afl_bench_until_crash, afl_debug_child_output, afl_autoresume;
+      afl_bench_until_crash, afl_debug_child_output, afl_autoresume,
+      afl_cal_fast;
 
   u8 *afl_tmpdir, *afl_post_library, *afl_custom_mutator_library,
       *afl_python_module, *afl_path, *afl_hang_tmout, *afl_skip_crashes,
@@ -439,7 +440,6 @@ typedef struct afl_state {
       no_arith,                         /* Skip most arithmetic ops         */
       shuffle_queue,                    /* Shuffle input queue?             */
       bitmap_changed,                   /* Time to update bitmap?           */
-      qemu_mode,                        /* Running in QEMU mode?            */
       unicorn_mode,                     /* Running in Unicorn mode?         */
       use_wine,                         /* Use WINE with QEMU mode          */
       skip_requested,                   /* Skip request, via SIGUSR1        */
@@ -559,8 +559,8 @@ typedef struct afl_state {
 
   /* CmpLog */
 
-  char *cmplog_binary;
-  s32   cmplog_child_pid, cmplog_fsrv_pid;
+  char *           cmplog_binary;
+  afl_forkserver_t cmplog_fsrv;     /* cmplog has its own little forkserver */
 
   /* Custom mutators */
   struct custom_mutator *mutator;
@@ -577,7 +577,9 @@ typedef struct afl_state {
   u32 document_counter;
 #endif
 
-  /* statis file */
+  void *maybe_add_auto;
+
+  /* statistics file */
   double last_bitmap_cvg, last_stability, last_eps;
 
   /* plot file saves from last run */
@@ -840,18 +842,18 @@ u32  calculate_score(afl_state_t *, struct queue_entry *);
 
 void read_bitmap(afl_state_t *, u8 *);
 void write_bitmap(afl_state_t *);
-u32  count_bits(u8 *);
-u32  count_bytes(u8 *);
-u32  count_non_255_bytes(u8 *);
+u32  count_bits(afl_state_t *, u8 *);
+u32  count_bytes(afl_state_t *, u8 *);
+u32  count_non_255_bytes(afl_state_t *, u8 *);
 #ifdef WORD_SIZE_64
-void simplify_trace(u64 *);
-void classify_counts(u64 *);
+void simplify_trace(afl_state_t *, u64 *);
+void classify_counts(afl_state_t *, u64 *);
 #else
-void simplify_trace(u32 *);
-void classify_counts(u32 *);
+void simplify_trace(afl_state_t *, u32 *);
+void classify_counts(afl_state_t *, u32 *);
 #endif
 void init_count_class16(void);
-void minimize_bits(u8 *, u8 *);
+void minimize_bits(afl_state_t *, u8 *, u8 *);
 #ifndef SIMPLE_FILES
 u8 *describe_op(afl_state_t *, u8);
 #endif
@@ -862,7 +864,7 @@ u8 has_new_bits(afl_state_t *, u8 *);
 
 void load_extras_file(afl_state_t *, u8 *, u32 *, u32 *, u32);
 void load_extras(afl_state_t *, u8 *);
-void maybe_add_auto(afl_state_t *, u8 *, u32);
+void maybe_add_auto(void *, u8 *, u32);
 void save_auto(afl_state_t *);
 void load_auto(afl_state_t *);
 void destroy_extras(afl_state_t *);
@@ -876,7 +878,7 @@ void show_init_stats(afl_state_t *);
 
 /* Run */
 
-u8   run_target(afl_state_t *, u32);
+u8   run_target(afl_state_t *, afl_forkserver_t *fsrv, u32);
 void write_to_testcase(afl_state_t *, void *, u32);
 u8   calibrate_case(afl_state_t *, struct queue_entry *, u8 *, u32, u8);
 void sync_fuzzers(afl_state_t *);
@@ -920,8 +922,7 @@ void   save_cmdline(afl_state_t *, u32, char **);
 
 /* CmpLog */
 
-void init_cmplog_forkserver(afl_state_t *afl);
-u8   common_fuzz_cmplog_stuff(afl_state_t *afl, u8 *out_buf, u32 len);
+u8 common_fuzz_cmplog_stuff(afl_state_t *afl, u8 *out_buf, u32 len);
 
 /* RedQueen */
 u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
