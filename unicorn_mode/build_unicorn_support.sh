@@ -4,7 +4,7 @@
 # ------------------------------------------------
 #
 # Originally written by Nathan Voss <njvoss99@gmail.com>
-# 
+#
 # Adapted from code by Andrew Griffiths <agriffiths@google.com> and
 #                      Michal Zalewski
 #
@@ -24,7 +24,7 @@
 #
 # This script downloads, patches, and builds a version of Unicorn with
 # minor tweaks to allow Unicorn-emulated binaries to be run under
-# afl-fuzz. 
+# afl-fuzz.
 #
 # The modifications reside in patches/*. The standalone Unicorn library
 # will be written to /usr/lib/libunicornafl.so, and the Python bindings
@@ -46,7 +46,7 @@ if [ ! "$PLT" = "Linux" ] && [ ! "$PLT" = "Darwin" ] && [ ! "$PLT" = "FreeBSD" ]
 
   echo "[-] Error: Unicorn instrumentation is unsupported on $PLT."
   exit 1
-  
+
 fi
 
 if [ ! -f "../config.h" ]; then
@@ -75,6 +75,7 @@ fi
 if [ "$PLT" = "Darwin" ]; then
   CORES=`sysctl -n hw.ncpu`
   TARCMD=tar
+  PYTHONBIN=python3
 fi
 
 if [ "$PLT" = "FreeBSD" ]; then
@@ -90,26 +91,40 @@ if [ "$PLT" = "NetBSD" ] || [ "$PLT" = "OpenBSD" ]; then
   TARCMD=gtar
 fi
 
+PREREQ_NOTFOUND=
 for i in $PYTHONBIN automake autoconf git $MAKECMD $TARCMD; do
 
-  T=`which "$i" 2>/dev/null`
+  T=`command -v "$i" 2>/dev/null`
 
   if [ "$T" = "" ]; then
 
     echo "[-] Error: '$i' not found. Run 'sudo apt-get install $i' or similar."
-    exit 1
+    PREREQ_NOTFOUND=1
 
   fi
 
 done
 
-if ! which $EASY_INSTALL > /dev/null; then
+if ! type $EASY_INSTALL > /dev/null; then
 
-  # work around for unusual installs
-  if [ '!' -e /usr/lib/python2.7/dist-packages/easy_install.py ] && [ '!' -e /usr/local/lib/python2.7/dist-packages/easy_install.py ] && [ '!' -e /usr/pkg/lib/python2.7/dist-packages/easy_install.py ]; then
+  # work around for installs with executable easy_install
+  EASY_INSTALL_FOUND=0
+  MYPYTHONPATH=`python -v </dev/null 2>&1 >/dev/null | sed -n -e '/^# \/.*\/os.py/{ s/.*matches //; s/os.py$//; p}'`
+  for PATHCANDIDATE in \
+        "dist-packages/" \
+        "site-packages/"
+  do
+    if [ -e "${MYPYTHONPATH}/${PATHCANDIDATE}/easy_install.py" ] ; then
+
+      EASY_INSTALL_FOUND=1
+      break
+
+    fi
+  done
+  if [ '!' $EASY_INSTALL_FOUND ]; then
 
     echo "[-] Error: Python setup-tools not found. Run 'sudo apt-get install python-setuptools'."
-    exit 1
+    PREREQ_NOTFOUND=1
 
   fi
 
@@ -118,8 +133,12 @@ fi
 if echo "$CC" | grep -qF /afl-; then
 
   echo "[-] Error: do not use afl-gcc or afl-clang to compile this tool."
-  exit 1
+  PREREQ_NOTFOUND=1
 
+fi
+
+if [ "$PREREQ_NOTFOUND" = "1" ]; then
+  exit 1
 fi
 
 echo "[+] All checks passed!"
@@ -176,11 +195,11 @@ cd ../samples/simple || exit 1
 
 # Run afl-showmap on the sample application. If anything comes out then it must have worked!
 unset AFL_INST_RATIO
-echo 0 | ../../../afl-showmap -U -m none -q -o .test-instr0 -- $PYTHONBIN simple_test_harness.py ./sample_inputs/sample1.bin || exit 1
+echo 0 | ../../../afl-showmap -U -m none -t 2000 -q -o .test-instr0 -- $PYTHONBIN simple_test_harness.py ./sample_inputs/sample1.bin || exit 1
 
 if [ -s .test-instr0 ]
 then
-  
+
   echo "[+] Instrumentation tests passed. "
   echo '[+] Make sure to adapt older scripts to `import unicornafl` and use `uc.afl_forkserver_start`'
   echo '    or `uc.afl_fuzz` to kick off fuzzing.'

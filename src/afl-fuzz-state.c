@@ -30,10 +30,9 @@ s8  interesting_8[] = {INTERESTING_8};
 s16 interesting_16[] = {INTERESTING_8, INTERESTING_16};
 s32 interesting_32[] = {INTERESTING_8, INTERESTING_16, INTERESTING_32};
 
-char *power_names[POWER_SCHEDULES_NUM] = {"explore", "fast",    "coe",  "lin",
-                                          "quad",    "exploit", "mmopt"};
+char *power_names[POWER_SCHEDULES_NUM] = {
 
-u8 *doc_path = NULL;                    /* gath to documentation dir        */
+    "explore", "fast", "coe", "lin", "quad", "exploit", "mmopt", "rare"};
 
 /* Initialize MOpt "globals" for this afl state */
 
@@ -78,6 +77,10 @@ list_t afl_states = {.element_prealloc_count = 0};
 
 void afl_state_init(afl_state_t *afl) {
 
+  /* thanks to this memset, growing vars like out_buf
+  and out_size are NULL/0 by default. */
+  memset(afl, 0, sizeof(afl_state_t));
+
   afl->w_init = 0.9;
   afl->w_end = 0.3;
   afl->g_max = 5000;
@@ -113,6 +116,29 @@ void afl_state_init(afl_state_t *afl) {
 
   afl->fsrv.child_pid = -1;
   afl->fsrv.out_dir_fd = -1;
+
+  afl->cmplog_prev_timed_out = 0;
+
+  /* statis file */
+  afl->last_bitmap_cvg = 0;
+  afl->last_stability = 0;
+  afl->last_eps = 0;
+
+  /* plot file saves from last run */
+  afl->plot_prev_qp = 0;
+  afl->plot_prev_pf = 0;
+  afl->plot_prev_pnf = 0;
+  afl->plot_prev_ce = 0;
+  afl->plot_prev_md = 0;
+  afl->plot_prev_qc = 0;
+  afl->plot_prev_uc = 0;
+  afl->plot_prev_uh = 0;
+
+  afl->stats_last_stats_ms = 0;
+  afl->stats_last_plot_ms = 0;
+  afl->stats_last_ms = 0;
+  afl->stats_last_execs = 0;
+  afl->stats_avg_exec = -1;
 
   init_mopt_globals(afl);
 
@@ -320,6 +346,15 @@ void read_afl_environment(afl_state_t *afl, char **envp) {
 /* Removes this afl_state instance and frees it. */
 
 void afl_state_deinit(afl_state_t *afl) {
+
+  if (afl->post_deinit) afl->post_deinit(afl->post_data);
+
+  free(afl->out_buf);
+  free(afl->out_scratch_buf);
+  free(afl->eff_buf);
+  free(afl->in_buf);
+  free(afl->in_scratch_buf);
+  free(afl->ex_buf);
 
   list_remove(&afl_states, afl);
 

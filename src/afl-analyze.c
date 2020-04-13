@@ -60,8 +60,7 @@ static s32 child_pid;                  /* PID of the tested program         */
 u8 *trace_bits;                        /* SHM with instrumentation bitmap   */
 
 static u8 *in_file,                    /* Analyzer input test case          */
-    *prog_in,                          /* Targeted program input file       */
-    *doc_path;                         /* Path to docs                      */
+    *prog_in;                          /* Targeted program input file       */
 
 static u8 *in_data;                    /* Input data for analysis           */
 
@@ -77,7 +76,7 @@ static s32 dev_null_fd = -1;           /* FD to /dev/null                   */
 
 u8 edges_only,                         /* Ignore hit counts?                */
     use_hex_offsets,                   /* Show hex offsets?                 */
-    be_quiet, use_stdin = 1;           /* Use stdin for program input?      */
+    use_stdin = 1;                     /* Use stdin for program input?      */
 
 static volatile u8 stop_soon,          /* Ctrl-C pressed?                   */
     child_timed_out;                   /* Child timed out?                  */
@@ -204,15 +203,6 @@ static s32 write_to_file(u8 *path, u8 *mem, u32 len) {
   lseek(ret, 0, SEEK_SET);
 
   return ret;
-
-}
-
-/* Handle timeout signal. */
-
-static void handle_timeout(int sig) {
-
-  child_timed_out = 1;
-  if (child_pid > 0) kill(child_pid, SIGKILL);
 
 }
 
@@ -769,11 +759,6 @@ static void setup_signal_handlers(void) {
   sigaction(SIGHUP, &sa, NULL);
   sigaction(SIGINT, &sa, NULL);
   sigaction(SIGTERM, &sa, NULL);
-
-  /* Exec timeout notifications. */
-
-  sa.sa_handler = handle_timeout;
-  sigaction(SIGALRM, &sa, NULL);
 
 }
 

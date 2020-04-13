@@ -27,81 +27,90 @@ DOC_PATH    ?= $(PREFIX)/share/doc/afl
 MAN_PATH    ?= $(PREFIX)/man/man8
 
 VERSION     = $(shell grep '^$(HASH)define VERSION ' ../config.h | cut -d '"' -f2)
+VERSION:sh= grep '^$(HASH)define VERSION ' ../config.h | cut -d '"' -f2
 
-CFLAGS      ?= -O3 -g -funroll-loops
-CFLAGS      += -Wall -I../include -D_FORTIFY_SOURCE=2 -Wno-pointer-sign \
+CFLAGS      ?= -O3 -g -funroll-loops -D_FORTIFY_SOURCE=2
+CFLAGS = -Wall -I../include -Wno-pointer-sign \
                -DAFL_PATH=\"$(HELPER_PATH)\" -DBIN_PATH=\"$(BIN_PATH)\" \
                -DGCC_VERSION=\"$(GCCVER)\" -DGCC_BINDIR=\"$(GCCBINDIR)\" \
                -Wno-unused-function
 
-CXXFLAGS    ?= -O3 -g -funroll-loops
-CXXEFLAGS   := $(CXXFLAGS) -Wall -D_FORTIFY_SOURCE=2
+CXXFLAGS    ?= -O3 -g -funroll-loops -D_FORTIFY_SOURCE=2
+CXXEFLAGS   = $(CXXFLAGS) -Wall
 
 CC          ?= gcc
 CXX         ?= g++
 
-PLUGIN_FLAGS = -fPIC -fno-rtti -I"$(shell $(CC) -print-file-name=plugin)/include"
+MYCC=$(CC:clang=gcc)
+MYCXX=$(CXX:clang++=g++)
+
+PLUGIN_PATH = $(shell $(MYCC) -print-file-name=plugin)
+PLUGIN_PATH:sh= $(MYCC) -print-file-name=plugin
+PLUGIN_FLAGS = -fPIC -fno-rtti -I"$(PLUGIN_PATH)/include"
 HASH=\#
 
-GCCVER    = $(shell $(CC) --version 2>/dev/null | awk 'NR == 1 {print $$NF}')
-GCCBINDIR = $(shell dirname `type $(CC) | awk '{print $$NF}'` 2>/dev/null )
+GCCVER    = $(shell $(MYCC) --version 2>/dev/null | awk 'NR == 1 {print $$NF}')
+GCCBINDIR = $(shell dirname `command -v $(MYCC)` 2>/dev/null )
 
-ifeq "$(shell echo '$(HASH)include <sys/ipc.h>@$(HASH)include <sys/shm.h>@int main() { int _id = shmget(IPC_PRIVATE, 65536, IPC_CREAT | IPC_EXCL | 0600); shmctl(_id, IPC_RMID, 0); return 0;}' | tr @ '\n' | $(CC) -x c - -o .test2 2>/dev/null && echo 1 || echo 0 ; rm -f .test2 )" "1"
-	SHMAT_OK=1
-else
-	SHMAT_OK=0
-	CFLAGS+=-DUSEMMAP=1
-	LDFLAGS += -lrt
-endif
+_SHMAT_OK= $(shell echo '$(HASH)include <sys/ipc.h>@$(HASH)include <sys/shm.h>@int main() { int _id = shmget(IPC_PRIVATE, 65536, IPC_CREAT | IPC_EXCL | 0600); shmctl(_id, IPC_RMID, 0); return 0;}' | tr @ '\n' | $(MYCC) -x c - -o .test2 2>/dev/null && echo 1 || echo 0 ; rm -f .test2 )
+_SHMAT_OK:sh= echo '$(HASH)include <sys/ipc.h>@$(HASH)include <sys/shm.h>@int main() { int _id = shmget(IPC_PRIVATE, 65536, IPC_CREAT | IPC_EXCL | 0600); shmctl(_id, IPC_RMID, 0); return 0;}' | tr @ '\n' | $(MYCC) -x c - -o .test2 2>/dev/null && echo 1 || echo 0 ; rm -f .test2
 
-ifeq "$(TEST_MMAP)" "1"
-	SHMAT_OK=0
-	CFLAGS+=-DUSEMMAP=1
-	LDFLAGS += -lrt
-endif
+IGNORE_MMAP=$(TEST_MMAP:1=0)
+__SHMAT_OK=$(_SHMAT_OK)$(IGNORE_MMAP)
+___SHMAT_OK=$(__SHMAT_OK:10=0)
+SHMAT_OK=$(___SHMAT_OK:1=1)
+_CFLAGS_ADD=$(SHMAT_OK:1=)
+CFLAGS_ADD=$(_CFLAGS_ADD:0=-DUSEMMAP=1)
+
+_LDFLAGS_ADD=$(SHMAT_OK:1=)
+LDFLAGS_ADD=$(_LDFLAGS_ADD:0=-lrt)
+
+CFLAGS += $(CFLAGS_ADD)
+LDFLAGS += $(LDFLAGS_ADD)
 
 PROGS        = ../afl-gcc-fast ../afl-gcc-pass.so ../afl-gcc-rt.o
 
 
 all: test_shm test_deps $(PROGS) afl-gcc-fast.8 test_build all_done
 
-ifeq "$(SHMAT_OK)" "1"
+debug:
+	@echo _SHMAT_OK = $(_SHMAT_OK)
+	@echo IGNORE_MMAP = $(IGNORE_MMAP)
+	@echo __SHMAT_OK = $(__SHMAT_OK)
+	@echo ___SHMAT_OK = $(___SHMAT_OK)
+	@echo SHMAT_OK = $(SHMAT_OK)
 
 test_shm:
-	@echo "[+] shmat seems to be working."
-	@rm -f .test2
-
-else
-
-test_shm:
-	@echo "[-] shmat seems not to be working, switching to mmap implementation"
-
-endif
-
+	@if [ "$(SHMAT_OK)" == "1" ]; then \
+	  echo "[+] shmat seems to be working."; \
+	  rm -f .test2; \
+	else \
+	  echo "[-] shmat seems not to be working, switching to mmap implementation"; \
+	fi
 
 test_deps:
-	@echo "[*] Checking for working '$(CC)'..."
-	@type $(CC) >/dev/null 2>&1 || ( echo "[-] Oops, can't find '$(CC)'. Make sure that it's in your \$$PATH (or set \$$CC and \$$CXX)."; exit 1 )
+	@echo "[*] Checking for working '$(MYCC)'..."
+	@type $(MYCC) >/dev/null 2>&1 || ( echo "[-] Oops, can't find '$(MYCC)'. Make sure that it's in your \$$PATH (or set \$$CC and \$$CXX)."; exit 1 )
 #	@echo "[*] Checking for gcc for plugin support..."
-#	@$(CC) -v 2>&1 | grep -q -- --enable-plugin || ( echo "[-] Oops, this gcc has not been configured with plugin support."; exit 1 )
+#	@$(MYCC) -v 2>&1 | grep -q -- --enable-plugin || ( echo "[-] Oops, this gcc has not been configured with plugin support."; exit 1 )
 	@echo "[*] Checking for gcc plugin development header files..."
-	@test -d `$(CC) -print-file-name=plugin`/include || ( echo "[-] Oops, can't find gcc header files. Be sure to install 'gcc-X-plugin-dev'."; exit 1 )
+	@test -d `$(MYCC) -print-file-name=plugin`/include || ( echo "[-] Oops, can't find gcc header files. Be sure to install 'gcc-X-plugin-dev'."; exit 1 )
 	@echo "[*] Checking for '../afl-showmap'..."
 	@test -f ../afl-showmap || ( echo "[-] Oops, can't find '../afl-showmap'. Be sure to compile AFL first."; exit 1 )
 	@echo "[+] All set and ready to build."
 
 afl-common.o: ../src/afl-common.c
-	$(CC) $(CFLAGS) -c $< -o $@ $(LDFLAGS)
+	$(MYCC) $(CFLAGS) -c $< -o $@ $(LDFLAGS)
 
 ../afl-gcc-fast: afl-gcc-fast.c afl-common.o | test_deps
-	$(CC) -DAFL_GCC_CC=\"$(CC)\" -DAFL_GCC_CXX=\"$(CXX)\" $(CFLAGS) $< afl-common.o -o $@ $(LDFLAGS)
+	$(MYCC) -DAFL_GCC_CC=\"$(MYCC)\" -DAFL_GCC_CXX=\"$(MYCXX)\" $(CFLAGS) $< afl-common.o -o $@ $(LDFLAGS)
 	ln -sf afl-gcc-fast ../afl-g++-fast
 
 ../afl-gcc-pass.so: afl-gcc-pass.so.cc | test_deps
-	$(CXX) $(CXXEFLAGS) $(PLUGIN_FLAGS) -shared $< -o $@
+	$(MYCXX) $(CXXEFLAGS) $(PLUGIN_FLAGS) -shared $< -o $@
 
 ../afl-gcc-rt.o: afl-gcc-rt.o.c | test_deps
-	$(CC) $(CFLAGS) -fPIC -c $< -o $@
+	$(MYCC) $(CFLAGS) -fPIC -c $< -o $@
 
 test_build: $(PROGS)
 	@echo "[*] Testing the CC wrapper and instrumentation output..."
@@ -118,7 +127,7 @@ all_done: test_build
 
 .NOTPARALLEL: clean
 
-vpath  % ..
+VPATH = ..
 %.8: %
 	@echo .TH $* 8 `date "+%Y-%m-%d"` "afl++" > ../$@
 	@echo .SH NAME >> ../$@
@@ -132,7 +141,7 @@ vpath  % ..
 	@../$* -h 2>&1 | tail -n +4 >> ../$@
 	@echo >> ../$@
 	@echo .SH AUTHOR >> ../$@
-	@echo "afl++ was written by Michal \"lcamtuf\" Zalewski and is maintained by Marc \"van Hauser\" Heuse <mh@mh-sec.de>, Heiko \"hexcoder-\" Eissfeldt <heiko.eissfeldt@hexco.de> and Andrea Fioraldi <andreafioraldi@gmail.com>" >> ../$@
+	@echo "afl++ was written by Michal \"lcamtuf\" Zalewski and is maintained by Marc \"van Hauser\" Heuse <mh@mh-sec.de>, Heiko \"hexcoder-\" Eissfeldt <heiko.eissfeldt@hexco.de>, Andrea Fioraldi <andreafioraldi@gmail.com> and Dominik Maier <domenukk@gmail.com>" >> ../$@
 	@echo  The homepage of afl++ is: https://github.com/AFLplusplus/AFLplusplus >> ../$@
 	@echo >> ../$@
 	@echo .SH LICENSE >> ../$@
@@ -143,7 +152,7 @@ install: all
 	install -m 755 ../afl-gcc-fast $${DESTDIR}$(BIN_PATH)
 	install -m 755 ../afl-gcc-pass.so ../afl-gcc-rt.o $${DESTDIR}$(HELPER_PATH)
 	install -m 644 -T README.md $${DESTDIR}$(DOC_PATH)/README.gcc_plugin.md
-	install -m 644 -T README.whitelist.md $${DESTDIR}$(DOC_PATH)/README.gcc_plugin_whitelist.md
+	install -m 644 -T README.whitelist.md $${DESTDIR}$(DOC_PATH)/README.gcc_plugin.whitelist.md
 
 clean:
 	rm -f *.o *.so *~ a.out core core.[1-9][0-9]* test-instr .test-instr0 .test-instr1 .test2

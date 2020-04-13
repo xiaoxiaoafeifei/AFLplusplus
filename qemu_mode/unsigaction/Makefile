@@ -12,23 +12,23 @@
 #
 #   http://www.apache.org/licenses/LICENSE-2.0
 #
+.POSIX:
 
-ifndef AFL_NO_X86
+_UNIQ=_QINU_
 
-all: lib_i386 lib_amd64
+TARGETCANDIDATES=unsigaction32.so unsigaction64.so
+_TARGETS=$(_UNIQ)$(AFL_NO_X86)$(_UNIQ)
+__TARGETS=$(_TARGETS:$(_UNIQ)1$(_UNIQ)=)
+TARGETS=$(__TARGETS:$(_UNIQ)$(_UNIQ)=$(TARGETCANDIDATES))
 
-lib_i386:
+all:  $(TARGETS)
+	@if [ "$(AFL_NO_X86)" != "" ]; then echo "[!] Note: skipping compilation of unsigaction (AFL_NO_X86 set)."; fi
+
+unsigaction32.so:
 	@$(CC) -m32 -fPIC -shared unsigaction.c -o unsigaction32.so 2>/dev/null ; if [ "$$?" = "0" ]; then echo "unsigaction32 build success"; else echo "unsigaction32 build failure (that's fine)"; fi
 
-lib_amd64:
-	$(CC) -fPIC -shared unsigaction.c -o unsigaction64.so
+unsigaction64.so:
+	$(CC) -m64 -fPIC -shared unsigaction.c -o unsigaction64.so
 
 clean:
 	rm -f unsigaction32.so unsigaction64.so
-
-else
-
-all:
-	@echo "[!] Note: skipping compilation of unsigaction (AFL_NO_X86 set)."
-
-endif

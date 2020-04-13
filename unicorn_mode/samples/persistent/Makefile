@@ -1,8 +1,10 @@
 # UnicornAFL Usage
 # Original Unicorn Example Makefile by Nguyen Anh Quynh <aquynh@gmail.com>, 2015
 # Adapted for AFL++ by domenukk <domenukk@gmail.com>, 2020
-
-UNAME_S := $(shell uname -s)
+.POSIX:
+UNAME_S =$(shell uname -s)# GNU make
+UNAME_S:sh=uname -s       # BSD make
+_UNIQ=_QINU_
 
 LIBDIR = ../../unicornafl
 BIN_EXT =
@@ -14,29 +16,32 @@ V ?= 0
 CFLAGS += -Wall -Werror -I../../unicornafl/include
 
 LDFLAGS += -L$(LIBDIR) -lpthread -lm
-ifeq ($(UNAME_S), Linux)
-LDFLAGS += -lrt
-endif
 
-ifneq ($(CROSS),)
-CC = $(CROSS)gcc
-endif
+_LRT = $(_UNIQ)$(UNAME_S:Linux=)
+__LRT = $(_LRT:$(_UNIQ)=-lrt)
+LRT = $(__LRT:$(_UNIQ)=)
+
+LDFLAGS += $(LRT)
+
+_CC = $(_UNIQ)$(CROSS)
+__CC = $(_CC:$(_UNIQ)=$(CC))
+MYCC = $(__CC:$(_UNIQ)$(CROSS)=$(CROSS)gcc)
 
 .PHONY: all clean
 
 all: harness
 
-clean:		
+clean:
 	rm -rf *.o harness harness-debug
 
 harness.o: harness.c ../../unicornafl/include/unicorn/*.h
-	${CC} ${CFLAGS} -O3 -c $<
+	${MYCC} ${CFLAGS} -O3 -c harness.c
 
 harness-debug.o: harness.c ../../unicornafl/include/unicorn/*.h
-	${CC} ${CFLAGS} -g -c $< -o $@
+	${MYCC} ${CFLAGS} -g -c harness.c -o $@
 
 harness: harness.o
-	${CC} -L${LIBDIR} $< ../../unicornafl/libunicornafl.a $(LDFLAGS) -o $@
+	${MYCC} -L${LIBDIR} harness.o ../../unicornafl/libunicornafl.a $(LDFLAGS) -o $@
 
 debug: harness-debug.o
-	${CC} -L${LIBDIR} $< ../../unicornafl/libunicornafl.a $(LDFLAGS) -o harness-debug
+	${MYCC} -L${LIBDIR} harness.o ../../unicornafl/libunicornafl.a $(LDFLAGS) -o harness-debug
