@@ -75,6 +75,7 @@ TranslationBlock *afl_gen_edge(CPUState *cpu, unsigned long afl_id)
     tcg_ctx->cpu = ENV_GET_CPU(env);
     
     target_ulong afl_loc = afl_id & (MAP_SIZE -1);
+    *afl_dynamic_size = MAX(*afl_dynamic_size, afl_loc);
     TCGv tmp0 = tcg_const_tl(afl_loc);
     gen_helper_afl_maybe_log(tmp0);
     tcg_temp_free(tmp0);

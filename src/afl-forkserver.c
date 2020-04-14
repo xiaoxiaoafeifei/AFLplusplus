@@ -398,14 +398,19 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
       if ((status & FS_OPT_MAPSIZE) == FS_OPT_MAPSIZE) {
 
         fsrv->map_size = FS_OPT_GET_MAPSIZE(status);
-        if (fsrv->map_size % 8)  // should not happen
-          fsrv->map_size = (((fsrv->map_size + 8) >> 3) << 3);
-        if (!be_quiet) ACTF("Target map size: %u", fsrv->map_size);
-        if (fsrv->map_size > MAP_SIZE)
-          FATAL(
-              "Target's coverage map size of %u is larger than the one this "
-              "afl++ is compiled with (%u)\n",
-              fsrv->map_size, MAP_SIZE);
+        if (fsrv->map_size <= 8) {
+          ACTF("Dynamic map size detected");
+          fsrv->dynamic_map_size = 1;
+        } else {
+          if (fsrv->map_size % 8)  // should not happen
+            fsrv->map_size = (((fsrv->map_size + 8) >> 3) << 3);
+          if (!be_quiet) ACTF("Target map size: %u", fsrv->map_size);
+          if (fsrv->map_size > MAP_SIZE)
+            FATAL(
+                "Target's coverage map size of %u is larger than the one this "
+                "afl++ is compiled with (%u)\n",
+                fsrv->map_size, MAP_SIZE);
+        }
 
       }
 

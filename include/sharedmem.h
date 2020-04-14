@@ -43,6 +43,7 @@ typedef struct sharedmem {
 #endif
 
   u8 *map;                                          /* shared memory region */
+  u32 *dynamic_size;                                /* shared size          */
 
   size_t size_alloc;                               /* actual allocated size */
   size_t size_used;                                  /* in use by shmem app */

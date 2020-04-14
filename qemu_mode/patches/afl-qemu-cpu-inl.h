@@ -69,6 +69,8 @@ __thread abi_ulong afl_prev_loc;
 struct cmp_map *__afl_cmp_map;
 __thread u32    __afl_cmp_counter;
 
+u32* afl_dynamic_size;
+
 /* Set in the child process in forkserver mode: */
 
 static int forkserver_installed = 0;
@@ -164,6 +166,8 @@ void afl_setup(void) {
     afl_area_ptr = shmat(shm_id, NULL, 0);
 
     if (afl_area_ptr == (void *)-1) exit(1);
+    
+    afl_dynamic_size = (u32*)(afl_area_ptr + MAP_SIZE);
 
     /* With AFL_INST_RATIO set to a low value, we want to touch the bitmap
        so that the parent doesn't give up on us. */
@@ -310,14 +314,9 @@ void afl_forkserver(CPUState *cpu) {
   int   t_fd[2];
   u8    child_stopped = 0;
 
-  // if in the future qemu has non-collding coverage then switch MAP_SIZE
-  // with the max ID value
-  if (MAP_SIZE <= 0x800000) {
-
-    map_size = (FS_OPT_ENABLED | FS_OPT_MAPSIZE | FS_OPT_SET_MAPSIZE(MAP_SIZE));
-    memcpy(tmp, &map_size, 4);
-
-  }
+  // tell the fuzzer taht we use a dynamic map size
+  map_size = (FS_OPT_ENABLED | FS_OPT_MAPSIZE | FS_OPT_SET_MAPSIZE(0));
+  memcpy(tmp, &map_size, 4);
 
   /* Tell the parent that we're alive. If the parent doesn't want
      to talk, assume that we're not running in forkserver mode. */

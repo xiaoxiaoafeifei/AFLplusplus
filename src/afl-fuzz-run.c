@@ -47,6 +47,7 @@ u8 run_target(afl_state_t *afl, afl_forkserver_t *fsrv, u32 timeout) {
      territory. */
 
   memset(fsrv->trace_bits, 0, fsrv->map_size);
+  *afl->shm.dynamic_size = 0;
 
   MEM_BARRIER();
   
@@ -119,6 +120,12 @@ u8 run_target(afl_state_t *afl, afl_forkserver_t *fsrv, u32 timeout) {
      behave very normally and do not have to be treated as volatile. */
 
   MEM_BARRIER();
+  
+  if (fsrv->dynamic_map_size) {
+    fsrv->map_size = MAX(*afl->shm.dynamic_size, fsrv->map_size);
+    if (fsrv->map_size & 7)
+      fsrv->map_size = (((fsrv->map_size +8) >> 3) << 3);
+  }
 
   tb4 = *(u32 *)fsrv->trace_bits;
 

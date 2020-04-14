@@ -158,7 +158,7 @@ u8 *afl_shm_init(sharedmem_t *shm, size_t map_size, unsigned char dumb_mode) {
 #else
   u8 *shm_str;
 
-  shm->shm_id = shmget(IPC_PRIVATE, map_size, IPC_CREAT | IPC_EXCL | 0600);
+  shm->shm_id = shmget(IPC_PRIVATE, map_size + sizeof(u32), IPC_CREAT | IPC_EXCL | 0600);
 
   if (shm->shm_id < 0) PFATAL("shmget() failed");
 
@@ -195,6 +195,8 @@ u8 *afl_shm_init(sharedmem_t *shm, size_t map_size, unsigned char dumb_mode) {
   shm->map = shmat(shm->shm_id, NULL, 0);
 
   if (shm->map == (void *)-1 || !shm->map) PFATAL("shmat() failed");
+  
+  shm->dynamic_size = (u32*)(shm->map + map_size);
 
   if (shm->cmplog_mode) {
 

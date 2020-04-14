@@ -55,6 +55,8 @@ typedef struct afl_forkserver {
   u32 snapshot;                         /* is snapshot feature used         */
   u64 mem_limit;                        /* Memory cap for child (MB)        */
 
+  u8 dynamic_map_size;                  /* Increasing map size during fuzz  */
+
   u8 *out_file,                         /* File to fuzz, if any             */
       *target_path;                                   /* Path of the target */
 
