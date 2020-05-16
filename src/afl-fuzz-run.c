@@ -371,9 +371,15 @@ abort_calibration:
 
 void sync_fuzzers(afl_state_t *afl) {
 
+  u64             profile_start, profile_end;
+  struct timespec spec;
+  clock_gettime(CLOCK_REALTIME, &spec);
+  profile_start = (spec.tv_sec * 1000000000) + spec.tv_nsec;
+
   DIR *          sd;
   struct dirent *sd_ent;
   u32            sync_cnt = 0;
+  u8             path[PATH_MAX];
 
   sd = opendir(afl->sync_dir);
   if (!sd) { PFATAL("Unable to open '%s'", afl->sync_dir); }
@@ -452,7 +458,6 @@ void sync_fuzzers(afl_state_t *afl) {
 
     while ((qd_ent = readdir(qd))) {
 
-      u8 *        path;
       s32         fd;
       struct stat st;
 
@@ -472,20 +477,15 @@ void sync_fuzzers(afl_state_t *afl) {
 
       }
 
-      path = alloc_printf("%s/%s", qd_path, qd_ent->d_name);
+      sprintf(path, "%s/%s", qd_path, qd_ent->d_name);
 
       /* Allow this to fail in case the other fuzzer is resuming or so... */
 
       fd = open(path, O_RDONLY);
 
-      if (fd < 0) {
+      if (fd < 0) { continue; }
 
-        ck_free(path);
-        continue;
-
-      }
-
-      if (fstat(fd, &st)) { PFATAL("fstat() failed"); }
+      if (fstat(fd, &st)) { WARNF("fstat() failed"); }
 
       /* Ignore zero-sized or oversized files. */
 
@@ -516,7 +516,6 @@ void sync_fuzzers(afl_state_t *afl) {
 
       }
 
-      ck_free(path);
       close(fd);
 
     }
@@ -532,6 +531,11 @@ void sync_fuzzers(afl_state_t *afl) {
   }
 
   closedir(sd);
+
+  clock_gettime(CLOCK_REALTIME, &spec);
+  profile_end = (spec.tv_sec * 1000000000) + spec.tv_nsec;
+  sprintf(path, "echo %016llu >> /tmp/profile.out",
+          profile_end - profile_start) if (system(path) != 0) WARNF("system");
 
 }
 
