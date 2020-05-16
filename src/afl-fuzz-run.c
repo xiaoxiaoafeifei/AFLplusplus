@@ -512,7 +512,8 @@ void sync_fuzzers(afl_state_t *afl) {
 
         munmap(mem, st.st_size);
 
-        if (!(afl->stage_cur++ % afl->stats_update_freq)) { show_stats(afl); }
+        //        if (!(afl->stage_cur++ % afl->stats_update_freq)) {
+        //        show_stats(afl); }
 
       }
 
@@ -534,8 +535,8 @@ void sync_fuzzers(afl_state_t *afl) {
 
   clock_gettime(CLOCK_REALTIME, &spec);
   profile_end = (spec.tv_sec * 1000000000) + spec.tv_nsec;
-  sprintf(path, "echo %016llu >> /tmp/profile.out",
-          profile_end - profile_start);
+  sprintf(path, "echo %016llu %u >> /tmp/profile.out",
+          profile_end - profile_start, afl->queued_imported);
   if (system(path) != 0) WARNF("system");
 
 }
