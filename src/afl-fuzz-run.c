@@ -535,7 +535,8 @@ void sync_fuzzers(afl_state_t *afl) {
   clock_gettime(CLOCK_REALTIME, &spec);
   profile_end = (spec.tv_sec * 1000000000) + spec.tv_nsec;
   sprintf(path, "echo %016llu >> /tmp/profile.out",
-          profile_end - profile_start) if (system(path) != 0) WARNF("system");
+          profile_end - profile_start);
+  if (system(path) != 0) WARNF("system");
 
 }
 
