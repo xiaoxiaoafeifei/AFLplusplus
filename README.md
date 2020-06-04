@@ -1,5 +1,19 @@
 # american fuzzy lop plus plus (afl++)
 
+shmem fuzzing forkserver mode
+
+all the magic:
+```
+make -C examples/shmem_mode install
+afl-fuzz -F ..
+```
+because of all the inject overhead it is just 1% even for test-instr
+more for more complex targets plus lseek/fseek etc are not even implemented.
+sadly a dead end.
+
+
+## Old Intro
+
   <img align="right" src="https://raw.githubusercontent.com/andreafioraldi/AFLplusplus-website/master/static/logo_256x256.png" alt="AFL++ Logo">
 
   ![Travis State](https://api.travis-ci.com/AFLplusplus/AFLplusplus.svg?branch=master)

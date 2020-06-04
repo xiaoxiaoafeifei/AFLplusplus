@@ -108,6 +108,7 @@ static void usage(afl_state_t *afl, u8 *argv0, int more_help) {
       "  -f file       - location read by the fuzzed program (stdin)\n"
       "  -t msec       - timeout for each run (auto-scaled, 50-%d ms)\n"
       "  -m megs       - memory limit for child process (%d MB)\n"
+      "  -F            - use shmem injection fuzzing\n"
       "  -Q            - use binary-only instrumentation (QEMU mode)\n"
       "  -U            - use unicorn-based instrumentation (Unicorn mode)\n"
       "  -W            - use qemu-based instrumentation with Wine (Wine "
@@ -242,7 +243,7 @@ static int stricmp(char const *a, char const *b) {
 
 int main(int argc, char **argv_orig, char **envp) {
 
-  s32    opt;
+  s32    opt, debug;
   u64    prev_queued = 0;
   u32    sync_interval_cnt = 0, seek_to, show_help = 0, map_size = MAP_SIZE;
   u8 *   extras_dir = 0;
@@ -257,10 +258,11 @@ int main(int argc, char **argv_orig, char **envp) {
   afl_state_t *afl = calloc(1, sizeof(afl_state_t));
   if (!afl) { FATAL("Could not create afl state"); }
 
-  if (get_afl_env("AFL_DEBUG")) { afl->debug = 1; }
+  if (get_afl_env("AFL_DEBUG")) { debug = afl->debug = 1; }
 
   map_size = get_map_size();
   afl_state_init(afl, map_size);
+  afl->debug = debug;
   afl_fsrv_init(&afl->fsrv);
 
   read_afl_environment(afl, envp);
@@ -276,7 +278,7 @@ int main(int argc, char **argv_orig, char **envp) {
   afl->init_seed = tv.tv_sec ^ tv.tv_usec ^ getpid();
 
   while ((opt = getopt(argc, argv,
-                       "+c:i:I:o:f:m:t:T:dnCB:S:M:x:QNUWe:p:s:V:E:L:hRP:")) >
+                       "+c:i:I:o:f:m:t:T:dnCB:S:M:x:QNUWe:p:s:V:E:L:hRP:F")) >
          0) {
 
     switch (opt) {
@@ -576,6 +578,13 @@ int main(int argc, char **argv_orig, char **envp) {
 
         break;
 
+      case 'F':                           /* shared memory fuzzing for fork */
+
+        afl->shmem_for_fork = 1;
+        afl->shmem_testcase_mode = 1;
+
+        break;
+
       case 'U':                                             /* Unicorn mode */
 
         if (afl->unicorn_mode) { FATAL("Multiple -U options not supported"); }
@@ -870,6 +879,8 @@ int main(int argc, char **argv_orig, char **envp) {
 
   #endif
 
+afl->shmem_testcase_mode = 1;
+
   setup_signal_handlers();
   check_asan_opts();
 
@@ -887,9 +898,17 @@ int main(int argc, char **argv_orig, char **envp) {
 
     if (afl->crash_mode) { FATAL("-C and -n are mutually exclusive"); }
     if (afl->fsrv.qemu_mode) { FATAL("-Q and -n are mutually exclusive"); }
+    if (afl->shmem_for_fork) { FATAL("-F and -n are mutually exclusive"); }
     if (afl->unicorn_mode) { FATAL("-U and -n are mutually exclusive"); }
 
   }
+  
+  if (afl->unicorn_mode + afl->fsrv.qemu_mode + afl->shmem_for_fork > 1) {
+  
+    FATAL("-Q, -U and/or -F can not be used together\n");
+  
+  }
+  
 
   if (get_afl_env("AFL_DISABLE_TRIM")) { afl->disable_trim = 1; }
 
@@ -1228,6 +1247,26 @@ int main(int argc, char **argv_orig, char **envp) {
     afl_fsrv_start(&afl->cmplog_fsrv, afl->argv, &afl->stop_soon,
                    afl->afl_env.afl_debug_child_output);
 
+  }
+  
+  if (afl->shmem_for_fork) {
+
+    char *preload, *afl_path = getenv("AFL_PATH");
+
+    if (afl->fsrv.use_stdin)
+      setenv("__AFL_SHMEM_FILENAME", "", 1);
+    else
+      setenv("__AFL_SHMEM_FILENAME", afl->fsrv.out_file, 1);
+    
+    if (!afl_path) afl_path = AFL_PATH;
+    if (afl->afl_env.afl_preload)
+      preload = alloc_printf("%s,%s/%s", getenv("LD_PRELOAD"), afl_path, "afl_shmem_module.so");
+    else
+      preload = alloc_printf("%s/%s", afl_path, "afl_shmem_module.so");
+
+    setenv("LD_PRELOAD", preload, 1);
+    free(preload);
+  
   }
 
   perform_dry_run(afl);

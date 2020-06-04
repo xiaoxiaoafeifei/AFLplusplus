@@ -445,7 +445,8 @@ typedef struct afl_state {
       fixed_seed,                       /* do not reseed                    */
       fast_cal,                         /* Try to calibrate faster?         */
       disable_trim,                     /* Never trim in fuzz_one           */
-      shmem_testcase_mode;              /* If sharedmem testcases are used  */
+      shmem_testcase_mode,              /* If sharedmem testcases are used  */
+      shmem_for_fork;                   /* use shmem fuzzing for fork       */
 
   u8 *virgin_bits,                      /* Regions yet untouched by fuzzing */
       *virgin_tmout,                    /* Bits we haven't seen in tmouts   */
